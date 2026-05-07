@@ -3,7 +3,8 @@
 #include <unordered_map>
 #include <mutex>
 #include <remus/remus.h>
-#include "cache.h"
+#include "components.h"
+#include "message.h"
 
 using CT = std::shared_ptr<remus::ComputeThread>; 
 
@@ -139,6 +140,7 @@ public:
         
         // lock the response map 
         std::lock_guard<std::mutex> guard(mtx_resp); 
+        (void*)ct; // just to get rid of compiler complaint about unused parameter
         
         // write the msg to the resp map 
         resp_map[msg.reqID] = msg;
@@ -250,4 +252,4 @@ public:
     /// @param val      data to write 
     /// @param ct       compute thread context
     void write(remus::rdma_ptr<DataEntry> ptr, uint64_t val, CT &ct); 
-}
+};

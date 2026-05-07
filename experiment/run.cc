@@ -8,7 +8,7 @@
 
 #include "cloudlab.h"
 #include "params.h"
-#include "workload.h"
+#include "gamcache.h"
 
 int main (int argc, char **argv) {
 
@@ -90,13 +90,13 @@ int main (int argc, char **argv) {
                 Message empty{}; 
                 empty.valid = false; 
                 auto slot = remus::rdma_ptr<Message>(
-                    mailptr.id(), mailptr.address() + n * sizeof(Message); 
+                    mailptr.id(), mailptr.address() + n * sizeof(Message) 
                 );
                 compute_threads[0]->Write(slot, empty); 
             }
 
             // allocate and initialize test DataEntry on CN0 (local read test) -- hardcoded for now
-            test_dataptr = compute_threads[0]->allocate<DateEntry>(); 
+            test_dataptr = compute_threads[0]->allocate<DataEntry>(); 
             DataEntry entry{}; 
             entry.data[0] = 42;
             entry.dir.flag = UNSHARED; 
@@ -123,7 +123,7 @@ int main (int argc, char **argv) {
                     // get the root (mailbox), make a local reference to it
                     auto set_ptr = ct->get_root<Message>();
                     // call constructor for GAMcache
-                    GAMcache cache(id, mailboxes);
+                    GAMcache cache(id, mailptr);
 
                     // first thread of cn0 will be reserved for polling 
                     if (id == c0 && i == 0) {

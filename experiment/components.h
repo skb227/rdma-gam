@@ -38,7 +38,7 @@ struct DirEntry {
         flag = UNSHARED;            // set flag initially to UNSHARED (home node only)
         slist_cnt = 0;              // zero sharing nodes
         dlist[0] = -1;              // no dirty nodes 
-        lock.store(0);              // set lock to unlocked (0)  
+        lock.store(0, ct);              // set lock to unlocked (0)  
     }
 
     /// acquire lock 
@@ -55,14 +55,14 @@ struct DirEntry {
     /// release lock 
     /// @param ct       compute thread context
     void release(CT &ct) {
-        lock.store(0); 
+        lock.store(0, ct); 
     }
 
     /// call contains on slist 
     /// @param nodeID       node id to look for 
     /// @return true if found, false otherwise
     bool slist_contains(uint64_t nodeID) {
-        for (int i = 0; i < slist_cnt; i++) {
+        for (uint64_t i = 0; i < slist_cnt; i++) {
             if (slist[i] == nodeID) 
                 return true; 
         }
@@ -105,4 +105,4 @@ struct CacheLine {
 struct DataEntry {
     uint64_t data[64]; 
     DirEntry dir;           // the metadata for that data line
-}
+};

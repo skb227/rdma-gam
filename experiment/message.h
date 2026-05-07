@@ -8,9 +8,7 @@
 
 enum MsgType {
     READ_REQ, 
-    READ_RES, 
-    FETCH_REQ,
-    FETCH_RES
+    READ_RES
 };
 
 // data sent in a message 
@@ -26,4 +24,4 @@ struct Message {
 // mailbox to receive requests 
 struct Mailbox {
     Message mail[16];       // will have to update later so that each node doesn't have only one mailbox 
-}
+};

@@ -4,7 +4,7 @@
 #           folder
 #
 # EXAMPLE:  exefile="build/rdma/multinode_test"
-exefile=build/experiment/lazylist
+exefile=build/experiment/run
 
 # The arguments that are common to all of the invocations of `exefile` for the
 # experiment.  This should not include `--node-id`, since that varies by node

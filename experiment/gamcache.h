@@ -19,6 +19,7 @@ class GAMcache {
 
     // for incoming responses 
     std::unordered_map<uint64_t, Message> resp_map; 
+    std::mutex mtx_resp; 
 
 
 public: 
@@ -28,6 +29,7 @@ public:
     
     
     ///     working with the mailbox 
+
     uint64_t getReqID() { return nextReqID.fetch_add(1); }
 
     /// send a message request 
@@ -49,12 +51,17 @@ public:
     Message waitfor(uint64_t reqid) {
         // wait for expected request id 
         while (true) {
-            auto itr = resp_map.find(reqid); 
-            if (itr != resp_map.end()) {
-                Message msg = itr->second; 
-                resp_map.erase(itr); 
-                return msg; 
+            {    
+                // get lock on the res map 
+                std::lock_guard<std::mutex> guard(mtx_resp); 
+                auto itr = resp_map.find(reqid); 
+                if (itr != resp_map.end()) {
+                    Message msg = itr->second; 
+                    resp_map.erase(itr); 
+                    return msg; 
+                }
             }
+            std::this_thread::yield();              // can switch to another thread if available, but don't lose this thread 
         }
     }
 
@@ -69,7 +76,7 @@ public:
         // continuous poll for any message 
         while (true) {
             Message msg = ct->Read(thisMail); 
-            if (/*msg exists?*/) {
+            if (msg.valid) {
                 switch(msg.type) {
                     case READ_REQ: 
                         handle_read_req(msg, ct); 
@@ -82,6 +89,58 @@ public:
         }
     }
 
+
+    ///     handling message requests 
+
+    /// handle read requests
+    /// @param msg      msg that was sent 
+    /// @param ct       compute thread context
+    void handle_read_req(Message msg, CT &ct) {
+        // so handling read request would occur on the home node -- meaning i have access to the directory entry 
+            // might be smart to add a safety check anyways 
+
+        // build the rdma_ptr to DataEntry with the msg.raw address 
+        auto ptr = remus::rdma_ptr<DataEntry> (msg.raw);   // can i send in the entire raw address or do i need to do .id then .address? 
+
+        // read the DataEntry from ptr
+        DataEntry dataE = ct->Read(ptr); 
+
+        // check the metadata flag in data entry 
+        if (dataE.dir.flag == SHARED || dataE.dir.flag == UNSHARED) { 
+            // build a message to send back to request node 
+            Message newmsg; 
+            newmsg.type = READ_RES; 
+            memcpy(newmsg.data, dataE.data, sizeof(dataE.data)); 
+            newmsg.raw =  msg.raw; 
+            newmsg.srcID = thisID; 
+            newmsg.reqID = msg.reqID;               // use the same request id 
+            newmsg.valid = true; 
+
+            // send the new message to the request node's inbox 
+            send(msg.srcID, newmsg, ct); 
+
+            // update directory entry 
+            dataE.dir.flag = SHARED; 
+            dataE.dir.slist[slist_cnt] = msg.srcID;     // add request node id to share list  
+            dataE.dir.slist_cnt++; 
+
+            // write the updated directory 
+            ct->Write(ptr, dataE); 
+        } else {                                    // has a dirty owner node 
+            // to build later 
+        }
+    }
+
+    /// handle read responses 
+    /// @param msg      msg received
+    /// @param ct       compute thread context 
+    void handle_read_res(Message msg, CT &ct) {
+        // would be in the request node here 
+                // again might be smart to add a safety check 
+        
+        // write the msg to the resp map 
+        resp_map[msg.reqID] = msg;
+    }
 
 
     ///     working with the cache 
@@ -159,14 +218,15 @@ public:
             // send read request to home node
             Message msg; 
             msg.type = READ_REQ; 
-            msg.addr = ptr.raw(); 
-            msg.src = thisID; 
+            msg.raw = ptr.raw(); 
+            msg.srcID = thisID; 
             msg.reqID = getReqID(); 
+            msg.flag = true; 
 
             send(ptr.id(), msg, ct); 
 
             // wait for response from home node 
-            Message res = waitfor(msg.reqID, ct); 
+            Message res = waitfor(msg.reqID); 
 
             // insert into this node's cache 
             cline.flag = SHARED; 

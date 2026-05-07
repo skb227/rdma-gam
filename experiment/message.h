@@ -8,18 +8,19 @@
 
 enum MsgType {
     READ_REQ, 
-    READ_RESP, 
+    READ_RES, 
     FETCH_REQ,
-    FETCH_RESP
+    FETCH_RES
 };
 
 // data sent in a message 
 struct Message {
     MsgType type; 
-    uint64_t addr; 
-    uint64_t src; 
+    uint64_t raw; 
+    uint64_t srcID; 
     uint64_t reqID; 
     uint64_t data[64]; 
+    bool valid = false;      // check that the message is valid 
 };
 
 // mailbox to receive requests 

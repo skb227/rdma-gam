@@ -7,7 +7,6 @@
 #include <remus/remus.h>
 
 #include "cloudlab.h"
-#include "nodes.h"
 #include "params.h"
 #include "workload.h"
 
@@ -76,10 +75,37 @@ int main (int argc, char **argv) {
             compute_threads.push_back(std::make_shared<remus::ComputeThread>(id, compute_node, args)); 
         }
 
-        // CN 0 will construct the data structure and save it in root
+        // declare ptr for mailbox to be accessible outside assignment
+        remus::rdma_ptr<Mailbox> mailptr; 
+
+        // and for a test data entry 
+        remus::rdma_ptr<DataEntry> test_dataptr; 
+
+        // CN 0 will construct the data structure (mailbox array) and save it in root
         if (id == c0) {
-            auto set_ptr = LazyListSet::New(compute_threads[0]);
-            compute_threads[0]->set_root(set_ptr); 
+            // allocate mailbox -- one Message slot per node 
+            mailptr = compute_threads[0]->allocate<Message>(cn - c0 + 1); 
+            // initialize all slots in mailbox to invalid 
+            for (uint64_t n = m0; n <= cn - c0; n++) {
+                Message empty{}; 
+                empty.valid = false; 
+                auto slot = remus::rdma_ptr<Message>(
+                    mailptr.id(), mailptr.address() + n * sizeof(Message); 
+                );
+                compute_threads[0]->Write(slot, empty); 
+            }
+
+            // allocate and initialize test DataEntry on CN0 (local read test) -- hardcoded for now
+            test_dataptr = compute_threads[0]->allocate<DateEntry>(); 
+            DataEntry entry{}; 
+            entry.data[0] = 42;
+            entry.dir.flag = UNSHARED; 
+            entry.dir.slist_cnt = 0; 
+            entry.dir.dlist[0] = (uint64_t)-1; 
+            compute_threads[0]->Write(test_dataptr, entry); 
+
+            // store mailbox as a root so all nodes can find it
+            compute_threads[0]->set_root(mailptr); 
         }
 
         // make threads and start them
@@ -94,80 +120,20 @@ int main (int argc, char **argv) {
 
                     // std::cout << "past barrier 1" << std::endl; 
 
-                    // get the root, make a local reference to it
-                    auto set_ptr = ct->get_root<LazyListSet>();
-                    // call constructor for LazyListSet
-                    LazyListSet set_handle(set_ptr);
+                    // get the root (mailbox), make a local reference to it
+                    auto set_ptr = ct->get_root<Message>();
+                    // call constructor for GAMcache
+                    GAMcache cache(id, mailboxes);
 
-
-                    // std::cout << "workload should go here" << std::endl; 
-
-        // workload test
-
-                    // make workload manager for this thread 
-                    test workload(set_handle, i, id); 
-                    ct->arrive_control_barrier(total_threads); 
-
-                    // std::cout << "past barrier 2" << std::endl; 
-
-                    // prefill data structure
-                    workload.prefill(ct, args); 
-                    ct->arrive_control_barrier(total_threads); 
-
-                    // std::cout << "past barrier 3" << std::endl; 
-
-                    // get starting time before thread does any work 
-                    std::chrono::high_resolution_clock::time_point start_time = std::chrono::high_resolution_clock::now(); 
-                    ct->arrive_control_barrier(total_threads); 
-
-                    // std::cout << "past barrier 4" << std::endl; 
-
-                    // std::cout << "about to run workload" << std::endl; 
-
-                    // run workload 
-                    workload.run(ct, args); 
-                    ct->arrive_control_barrier(total_threads); 
-
-                    // std::cout << "past barrier 5" << std::endl; 
-
-                    // compute end time 
-                    auto end_time = std::chrono::high_resolution_clock::now(); 
-                    auto duration = std::chrono::duration_cast<std::chrono::microseconds>( end_time - start_time ).count(); 
-
-        // end of workload test
-                
-                    // wait till all threads finish workload test
-                    // ct->arrive_control_barrier(total_threads); 
-
-                    // reclaim memory from prior phase
-                    ct->ReclaimDeferred(); 
-
-                    // std::cout << "compile metrics objects" << std::endl; 
-
-                    // first thread of cn0 works with data structure, creates global metrics object
+                    // first thread of cn0 will be reserved for polling 
                     if (id == c0 && i == 0) {
-                        set_handle.destroy(ct); 
-                        auto metrics = ct->allocate<Metrics>(); 
-                        ct->Write(metrics, Metrics()); 
-                        ct->set_root(metrics); 
-                    }
-                    ct->arrive_control_barrier(total_threads); 
-
-                    // std::cout << "past barrier six" << std::endl; 
-
-                    // aggregate metrics across all threads
-                    auto metrics = remus::rdma_ptr<Metrics>(ct->get_root<Metrics>());
-                    workload.collect(ct, metrics); 
-                    ct->arrive_control_barrier(total_threads); 
-
-                    // std::cout << "past barrier seven" << std::endl; 
-
-                    // first thread of cn0 write aggregate metrics to file
-                    if (id == c0 && i == 0) {
-                        compute_threads[0]->Read(metrics).to_file(duration, compute_threads[0]); 
+                        // for now skipping polling, just test local reads 
+                        // so local read test: 
+                        uint64_t res = cache.read(test_dataptr, ct); 
+                        std::cout << "local read result: " << res << " (expected: 42)" << std::endl; 
                     }
 
-                    // std::cout << "written to file " << std::endl; 
+                    ct->arrive_control_barrier(total_threads); 
                 },
             i));
         }

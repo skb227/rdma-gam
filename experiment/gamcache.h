@@ -121,8 +121,7 @@ public:
 
             // update directory entry 
             dataE.dir.flag = SHARED; 
-            dataE.dir.slist[slist_cnt] = msg.srcID;     // add request node id to share list  
-            dataE.dir.slist_cnt++; 
+            dataE.dir.slist_add(msg.srcID);     // add request node id to share list  
 
             // write the updated directory 
             ct->Write(ptr, dataE); 
@@ -137,6 +136,9 @@ public:
     void handle_read_res(Message msg, CT &ct) {
         // would be in the request node here 
                 // again might be smart to add a safety check 
+        
+        // lock the response map 
+        std::lock_guard<std::mutex> guard(mtx_resp); 
         
         // write the msg to the resp map 
         resp_map[msg.reqID] = msg;
@@ -221,7 +223,7 @@ public:
             msg.raw = ptr.raw(); 
             msg.srcID = thisID; 
             msg.reqID = getReqID(); 
-            msg.flag = true; 
+            msg.valid = true; 
 
             send(ptr.id(), msg, ct); 
 

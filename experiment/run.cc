@@ -75,14 +75,17 @@ int main (int argc, char **argv) {
             compute_threads.push_back(std::make_shared<remus::ComputeThread>(id, compute_node, args)); 
         }
 
+        std::cout << "build the ptrs" << std::endl; 
+
         // declare ptr for mailbox to be accessible outside assignment
-        remus::rdma_ptr<Mailbox> mailptr; 
+        remus::rdma_ptr<Message> mailptr; 
 
         // and for a test data entry 
         remus::rdma_ptr<DataEntry> test_dataptr; 
 
         // CN 0 will construct the data structure (mailbox array) and save it in root
         if (id == c0) {
+            std::cout << "constructing the data structure" << std::endl; 
             // allocate mailbox -- one Message slot per node 
             mailptr = compute_threads[0]->allocate<Message>(cn - c0 + 1); 
             // initialize all slots in mailbox to invalid 
@@ -95,6 +98,7 @@ int main (int argc, char **argv) {
                 compute_threads[0]->Write(slot, empty); 
             }
 
+            std::cout << "allocating and initializing data entry" << std::endl; 
             // allocate and initialize test DataEntry on CN0 (local read test) -- hardcoded for now
             test_dataptr = compute_threads[0]->allocate<DataEntry>(); 
             DataEntry entry{}; 
@@ -104,6 +108,7 @@ int main (int argc, char **argv) {
             entry.dir.dlist[0] = (uint64_t)-1; 
             compute_threads[0]->Write(test_dataptr, entry); 
 
+            std::cout << "set to root" << std::endl; 
             // store mailbox as a root so all nodes can find it
             compute_threads[0]->set_root(mailptr); 
         }
@@ -118,20 +123,22 @@ int main (int argc, char **argv) {
                     // wait for all threads to be created across all nodes
                     ct->arrive_control_barrier(total_threads);
 
-                    // std::cout << "past barrier 1" << std::endl; 
+                    std::cout << "past barrier 1, going to construct gamcache" << std::endl; 
 
                     // get the root (mailbox), make a local reference to it
-                    auto set_ptr = ct->get_root<Message>();
+                    auto mbox = ct->get_root<Message>();
                     // call constructor for GAMcache
-                    GAMcache cache(id, mailptr);
+                    GAMcache cache(id, mbox);
 
                     // first thread of cn0 will be reserved for polling 
                     if (id == c0 && i == 0) {
+                        std::cout << "polling thread, " << id << ", " << i << std::endl; 
                         // for now skipping polling, just test local reads 
                         // so local read test: 
                         uint64_t res = cache.read(test_dataptr, ct); 
                         std::cout << "local read result: " << res << " (expected: 42)" << std::endl; 
                     }
+                    std::cout << "not polling thread, " << id << ", " << i << std::endl; 
 
                     ct->arrive_control_barrier(total_threads); 
                 },

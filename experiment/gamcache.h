@@ -25,7 +25,7 @@ class GAMcache {
 
 public: 
     
-    GAMcache(uint64_t node_id, remus::rdma_ptr<Mailbox> mbox) 
+    GAMcache(uint64_t node_id, remus::rdma_ptr<Message> mbox) 
         : thisID(node_id), mailboxes(mbox) {}
     
     
@@ -140,7 +140,7 @@ public:
         
         // lock the response map 
         std::lock_guard<std::mutex> guard(mtx_resp); 
-        (void*)ct; // just to get rid of compiler complaint about unused parameter
+        CT ct2 = ct; // just to get rid of compiler complaint about unused parameter
         
         // write the msg to the resp map 
         resp_map[msg.reqID] = msg;

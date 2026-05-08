@@ -108,9 +108,9 @@ int main (int argc, char **argv) {
             entry.dir.dlist[0] = (uint64_t)-1; 
             compute_threads[0]->Write(test_dataptr, entry); 
 
-            std::cout << "set to root" << std::endl; 
-            // store mailbox as a root so all nodes can find it
-            compute_threads[0]->set_root(mailptr); 
+            // std::cout << "set to root" << std::endl; 
+            // // store mailbox as a root so all nodes can find it
+            // compute_threads[0]->set_root(mailptr); 
         }
 
         // make threads and start them
@@ -125,6 +125,11 @@ int main (int argc, char **argv) {
 
                     std::cout << "past barrier 1, going to construct gamcache" << std::endl; 
 
+                    // try setting root here instead  -- ensures that set_root is done before anyone calls get_root, but after barrier
+                    if (id == c0 && i == 0) {
+                        ct->set_root(mailptr);  
+                    }
+
                     // get the root (mailbox), make a local reference to it
                     auto mbox = ct->get_root<Message>();
                     // call constructor for GAMcache
@@ -135,11 +140,15 @@ int main (int argc, char **argv) {
                         std::cout << "polling thread, " << id << ", " << i << std::endl; 
                         // for now skipping polling, just test local reads 
                         // so local read test: 
-                        uint64_t res = cache.read(test_dataptr, ct); 
-                        std::cout << "local read result: " << res << " (expected: 42)" << std::endl; 
+                        //uint64_t res = cache.read(test_dataptr, ct); 
+                        cache.pollMailbox(ct); 
                     }
                     std::cout << "not polling thread, " << id << ", " << i << std::endl; 
 
+                    uint64_t res = cache.read(test_dataptr, ct); 
+                        std::cout << "local read result: " << res << " (expected: 42)" << std::endl; 
+
+                    std::cout << "thread " << i << " on node " << id << " about to hit the barrier, total=" << total_threads << std::endl; 
                     ct->arrive_control_barrier(total_threads); 
                 },
             i));

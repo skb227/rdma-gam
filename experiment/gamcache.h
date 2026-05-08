@@ -57,6 +57,7 @@ public:
                 std::lock_guard<std::mutex> guard(mtx_resp); 
                 auto itr = resp_map.find(reqid); 
                 if (itr != resp_map.end()) {
+                    std::cout << "message found" << std::endl; 
                     Message msg = itr->second; 
                     resp_map.erase(itr); 
                     return msg; 
@@ -78,6 +79,7 @@ public:
         while (true) {
             Message msg = ct->Read(thisMail); 
             if (msg.valid) {
+                std::cout << "found a valid message in polling thread" << std::endl; 
                 switch(msg.type) {
                     case READ_REQ: 
                         handle_read_req(msg, ct); 
@@ -97,6 +99,7 @@ public:
     /// @param msg      msg that was sent 
     /// @param ct       compute thread context
     void handle_read_req(Message msg, CT &ct) {
+        std::cout << "handle read req" << std::endl; 
         // so handling read request would occur on the home node -- meaning i have access to the directory entry 
             // might be smart to add a safety check anyways 
 
@@ -118,6 +121,7 @@ public:
             newmsg.valid = true; 
 
             // send the new message to the request node's inbox 
+            std::cout << "sending response to " << msg.srcID << std::endl; 
             send(msg.srcID, newmsg, ct); 
 
             // update directory entry 
@@ -143,6 +147,8 @@ public:
         CT ct2 = ct; // just to get rid of compiler complaint about unused parameter
         
         // write the msg to the resp map 
+
+        std::cout << "write response to " << msg.reqID << std::endl; 
         resp_map[msg.reqID] = msg;
     }
 
@@ -187,6 +193,7 @@ public:
     /// @param ct       compute thread context
     /// @return the data read from the addr 
     uint64_t read(remus::rdma_ptr<DataEntry> ptr, CT &ct) {
+        std::cout << "in read" << std::endl; 
         if (ptr.id() == thisID)
             return local_read(ptr, ct);
         else
@@ -197,6 +204,7 @@ public:
     /// @param ptr      rdma_ptr to the data entry to read from 
     /// @param ct       compute thread context 
     uint64_t local_read(remus::rdma_ptr<DataEntry> ptr, CT &ct) {
+        std::cout << "in local read" << std::endl; 
         // get the data entry from the ptr 
         DataEntry dataE = ct->Read(ptr); 
 
@@ -213,12 +221,15 @@ public:
     /// @param ptr      rdma_ptr to the data entry to read from
     /// @param ct       compute thread context 
     uint64_t remote_read(remus::rdma_ptr<DataEntry> ptr, CT &ct) {
+        std::cout << "in remote read" << std::endl; 
         CacheLine cline; 
         // look for the address in the cache
         if (cache_lookup(ptr.address(), cline) && cline.flag != INVALID) {      // if found and not invalid 
+            std::cout << "cache hit" << std::endl; 
             // return the cached data directly 
             return cline.data[0]; 
         } else {                // doesn't exist in the cache -- need to request from home node and store
+            std::cout << "cache miss" << std::endl; 
             // send read request to home node
             Message msg; 
             msg.type = READ_REQ; 
@@ -227,15 +238,24 @@ public:
             msg.reqID = getReqID(); 
             msg.valid = true; 
 
+            std::cout << "build the message" << std::endl; 
+            std::cout << "sending message" << std::endl; 
+
             send(ptr.id(), msg, ct); 
+
+            std::cout << "message sent, waiting for response" << std::endl; 
 
             // wait for response from home node 
             Message res = waitfor(msg.reqID); 
+
+            std::cout << "response received" << std::endl; 
 
             // insert into this node's cache 
             cline.flag = SHARED; 
             cline.home_node = ptr.id(); 
             memcpy(cline.data, res.data, sizeof(res.data)); 
+
+            std::cout << "inserting into cache" << std::endl; 
 
             cache_insert(ptr.raw(), cline); 
 

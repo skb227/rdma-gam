@@ -88,6 +88,7 @@ int main (int argc, char **argv) {
             std::cout << "constructing the data structure" << std::endl; 
             // allocate mailbox -- one Message slot per node 
             mailptr = compute_threads[0]->allocate<Message>(cn - c0 + 1); 
+            compute_threads[0]->set_root(mailptr); 
             // initialize all slots in mailbox to invalid 
             for (uint64_t n = m0; n <= cn - c0; n++) {
                 Message empty{}; 
@@ -126,9 +127,9 @@ int main (int argc, char **argv) {
                     std::cout << "past barrier 1, going to construct gamcache" << std::endl; 
 
                     // try setting root here instead  -- ensures that set_root is done before anyone calls get_root, but after barrier
-                    if (id == c0 && i == 0) {
-                        ct->set_root(mailptr);  
-                    }
+                    // if (id == c0 && i == 0) {
+                    //     ct->set_root(mailptr);  
+                    // }
 
                     // get the root (mailbox), make a local reference to it
                     auto mbox = ct->get_root<Message>();
@@ -145,7 +146,7 @@ int main (int argc, char **argv) {
                     }
                     std::cout << "not polling thread, " << id << ", " << i << std::endl; 
 
-                    uint64_t res = cache.read(test_dataptr, ct); 
+                    uint64_t res = cache.local_read(test_dataptr, ct); 
                         std::cout << "local read result: " << res << " (expected: 42)" << std::endl; 
 
                     std::cout << "thread " << i << " on node " << id << " about to hit the barrier, total=" << total_threads << std::endl; 

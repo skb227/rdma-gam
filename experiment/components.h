@@ -106,3 +106,9 @@ struct DataEntry {
     uint64_t data[64]; 
     DirEntry dir;           // the metadata for that data line
 };
+
+// global address to track the DataEntry rdma_ptr with its home node id 
+struct GAddr {
+    remus::rdma_ptr<DataEntry> ptr; 
+    uint64_t home_node; 
+};

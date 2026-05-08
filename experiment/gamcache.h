@@ -15,7 +15,7 @@ class GAMcache {
     uint64_t thisID;                // this node's id
 
     // for mailbox and requests
-    remus::rdma_ptr<Mailbox> mailboxes; 
+    remus::rdma_ptr<Message> mailboxes; 
     std::atomic<uint64_t> nextReqID{0}; 
 
     // for incoming responses 

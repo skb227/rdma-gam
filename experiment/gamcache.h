@@ -193,8 +193,14 @@ public:
     /// @param ct       compute thread context
     /// @return the data read from the addr 
     uint64_t read(remus::rdma_ptr<DataEntry> ptr, CT &ct) {
+        std::cout << "is the segmentation fault in the Read(ptr)?" << std::endl; 
+        std::cout << "ptr.id()=" << ptr.id() 
+              << " ptr.address()=" << ptr.address() 
+              << " ptr.raw()=" << ptr.raw() << std::endl;
+        DataEntry dataE = ct->Read(ptr); 
         std::cout << "in read" << std::endl; 
-        if (ptr.id() == thisID)
+        std::cout << "comparing home node id " << dataE.homeNode << " with thisID " << thisID << std::endl; 
+        if (dataE.homeNode == thisID)
             return local_read(ptr, ct);
         else
             return remote_read(ptr, ct); 

@@ -2,6 +2,7 @@
 
 
 #include <remus/remus.h>
+#include "message.h"
 
 using CT = std::shared_ptr<remus::ComputeThread>;
 
@@ -93,11 +94,8 @@ struct DirEntry {
 
 // cache line entry (exist on remote nodes) 
 struct CacheLine {
-
     State flag;             // state of the cache line
-
     uint64_t home_node;     // home node id
-
     uint64_t data[64];      // the cached data 
 };
 
@@ -105,10 +103,11 @@ struct CacheLine {
 struct DataEntry {
     uint64_t data[64]; 
     DirEntry dir;           // the metadata for that data line
+    uint64_t homeNode;     // id of the home node                   (rdma_ptr.id() is id to remote memory node :( 
 };
 
-// global address to track the DataEntry rdma_ptr with its home node id 
+// GAddr like in GAM paper for master node 
 struct GAddr {
-    remus::rdma_ptr<DataEntry> ptr; 
-    uint64_t home_node; 
+    remus::rdma_ptr<Message> mailboxes;  
+    remus::rdma_ptr<DataEntry> testdata; 
 };

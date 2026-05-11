@@ -43,6 +43,11 @@ public:
             mailboxes.id(), mailboxes.address() + destID * sizeof(Message)
         );
 
+        // ensure valid bit is set
+        msg.valid = true; 
+
+        std::cout << "send is writing with req id " << msg.reqID << std::endl; 
+
         // write msg to that mailbox slot
         ct->Write(mailptr, msg);
     }  
@@ -51,6 +56,7 @@ public:
     /// @param reqid        request id to find
     Message waitfor(uint64_t reqid) {
         // wait for expected request id 
+        std::cout << "waitfor looking for reqid " << reqid << std::endl; 
         while (true) {
             {    
                 // get lock on the res map 
@@ -77,15 +83,17 @@ public:
 
         // continuous poll for any message 
         while (true) {
-            Message msg = ct->Read(thisMail); 
+            Message msg = ct->Read(thisMail);
             if (msg.valid) {
                 std::cout << "found a valid message in polling thread" << std::endl; 
                 switch(msg.type) {
                     case READ_REQ: 
                         handle_read_req(msg, ct); 
+                        msg.valid = false; ct->Write(thisMail, msg); 
                         break; 
                     case READ_RES: 
                         handle_read_res(msg, ct); 
+                        msg.valid = false; ct->Write(thisMail, msg); 
                         break; 
                 }
             }
@@ -194,39 +202,39 @@ public:
     /// @return the data read from the addr 
     uint64_t read(remus::rdma_ptr<DataEntry> ptr, CT &ct) {
         std::cout << "is the segmentation fault in the Read(ptr)?" << std::endl; 
-        std::cout << "ptr.id()=" << ptr.id() 
-              << " ptr.address()=" << ptr.address() 
-              << " ptr.raw()=" << ptr.raw() << std::endl;
+        std::cout << ptr.id() << ", " << ptr.address() << std::endl; 
         DataEntry dataE = ct->Read(ptr); 
         std::cout << "in read" << std::endl; 
         std::cout << "comparing home node id " << dataE.homeNode << " with thisID " << thisID << std::endl; 
         if (dataE.homeNode == thisID)
-            return local_read(ptr, ct);
+            return local_read(ptr, dataE, ct);
         else
-            return remote_read(ptr, ct); 
+            return remote_read(ptr, dataE, ct); 
     }
 
     /// local read -- request node is the home node 
     /// @param ptr      rdma_ptr to the data entry to read from 
+    /// @param dataE    data entry to home node 
     /// @param ct       compute thread context 
-    uint64_t local_read(remus::rdma_ptr<DataEntry> ptr, CT &ct) {
+    uint64_t local_read(remus::rdma_ptr<DataEntry> ptr, DataEntry dataE, CT &ct) {
         std::cout << "in local read" << std::endl; 
-        // get the data entry from the ptr 
-        DataEntry dataE = ct->Read(ptr); 
 
         if (dataE.dir.flag == SHARED || dataE.dir.flag == UNSHARED) {
         // SHARED/UNSHARED -- can return the data
             return dataE.data[0];
         } else {
         // DIRTY
+            DataEntry rmv = ct->Read(ptr); 
+            std::cout << "make compiler go away" << rmv.dir.flag << std::endl; 
             return -1; // not implemented yet
         }
     }
 
     /// remote read -- request node is not the home node
     /// @param ptr      rdma_ptr to the data entry to read from
+    /// @param dataE    data entry from home node 
     /// @param ct       compute thread context 
-    uint64_t remote_read(remus::rdma_ptr<DataEntry> ptr, CT &ct) {
+    uint64_t remote_read(remus::rdma_ptr<DataEntry> ptr, DataEntry dataE, CT &ct) {
         std::cout << "in remote read" << std::endl; 
         CacheLine cline; 
         // look for the address in the cache
@@ -247,7 +255,7 @@ public:
             std::cout << "build the message" << std::endl; 
             std::cout << "sending message" << std::endl; 
 
-            send(ptr.id(), msg, ct); 
+            send(dataE.homeNode, msg, ct); 
 
             std::cout << "message sent, waiting for response" << std::endl; 
 

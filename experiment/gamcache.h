@@ -139,7 +139,31 @@ public:
             // write the updated directory 
             ct->Write(ptr, dataE); 
         } else {                                    // has a dirty owner node 
-            // to build later 
+            // this is the owner node, will have to send the data back and change the information of the cache line to be Shared
+
+            // build a message to send back to request node
+            Message newmsg; 
+            newmsg.type = READ_RES; 
+            newmsg.raw = msg.raw; 
+            newmsg.srcID = thisID; 
+            newmsg.reqID = msg.reqID; 
+            newmsg.valid = true; 
+
+            // fetch the cache line with the requested data 
+            CacheLine cline; 
+            cache_lookup(ptr.address(), cline); 
+
+            // add the cached data to the message
+            memcpy(newmsg.data, cline.data, sizeof(dataE.data)); \
+
+            // change the cache line to shared 
+            cline.flag = SHARED; 
+
+            // send back to request node 
+            send(msg.srcID, newmsg, ct); 
+            
+            // write the updated cache line 
+            cache_insert(ptr.raw(), cline);
         }
     }
 
@@ -223,10 +247,26 @@ public:
         // SHARED/UNSHARED -- can return the data
             return dataE.data[0];
         } else {
-        // DIRTY
-            DataEntry rmv = ct->Read(ptr); 
-            std::cout << "make compiler go away" << rmv.dir.flag << std::endl; 
-            return -1; // not implemented yet
+            // find owner node id 
+            uint64_t owner = dataE.dir.dlist[0]; 
+            // send fetch request to owner node 
+            Message msg;
+            msg.type = READ_REQ;
+            msg.raw = ptr.raw(); 
+            msg.srcID = thisID; 
+            msg.reqID = getReqID(); 
+            msg.valid = true; 
+            send(owner, msg, ct); 
+            // wait for response from owner node 
+            Message res = waitfor(msg.reqID); 
+            // update directory entry and memory 
+            dataE.dir.dlist[0] = -1; 
+            dataE.dir.slist_add(owner); 
+            memcpy(dataE.data, res.data, sizeof(res.data)); 
+            // write back to memory
+            ct->Write(ptr, dataE); 
+            // return updated data
+            return dataE.data[0];
         }
     }
 
@@ -266,7 +306,7 @@ public:
 
             // insert into this node's cache 
             cline.flag = SHARED; 
-            cline.home_node = ptr.id(); 
+            cline.home_node = dataE.homeNode; 
             memcpy(cline.data, res.data, sizeof(res.data)); 
 
             std::cout << "inserting into cache" << std::endl; 
@@ -285,5 +325,45 @@ public:
     /// @param ptr      rdma_ptr to write the data entry to
     /// @param val      data to write 
     /// @param ct       compute thread context
-    void write(remus::rdma_ptr<DataEntry> ptr, uint64_t val, CT &ct); 
+    void write(remus::rdma_ptr<DataEntry> ptr, uint64_t val, CT &ct) {
+        DataEntry dataE = ct->Read(ptr); 
+        std::cout << "in write" << std::endl; 
+        std::cout << "comparing home node id " << dataE.homeNode << " with thisID " << thisID << std::endl; 
+        if (dataE.homeNode == thisID)
+            return local_write(ptr, dataE, val, ct);
+        else
+            return remote_write(ptr, dataE, val, ct);
+    }
+
+    /// local write -- request node is the home node
+    /// @param ptr      rdma_ptr to write the data entry to 
+    /// @param dataE    data entry read from the ptr 
+    /// @param val      data to write
+    /// @param ct       compute thread context 
+    void local_write(remus::rdma_ptr<DataEntry> ptr, DataEntry dataE, uint64_t val, CT &ct);
+
+    /// remote write -- request node is not the home node 
+    /// @param ptr      rdma_ptr to write the data entry to 
+    /// @param dataE    data entry read from the ptr 
+    /// @param val      data to write
+    /// @param ct       compute thread context
+    void remote_write(remus::rdma_ptr<DataEntry> ptr, DataEntry dataE, uint64_t val, CT &ct);
+    
 };
+
+
+
+/*
+
+implement ALL writes
+  - local unshared write
+  - local shared write
+  - local dirty write
+  - remote unshared write
+  - remote shared write
+  - remote dirty write 
+implement rest of reads
+  - remote dirty read 
+  - and test local dirty read
+
+*/

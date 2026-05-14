@@ -178,6 +178,9 @@ int main (int argc, char **argv) {
                             std::cout << testdata_ptr.id() << ", " << testdata_ptr.address() << std::endl; 
                             uint64_t res = cache->read(testdata_ptr, ct); 
                             std::cout << "remote read result: " << res << std::endl; 
+                            std::cout << "remote read again (cache hit?)"; 
+                            uint64_t res2 = cache->read(testdata_ptr, ct); 
+                            std::cout << "remote read 2 result: " << res2 << std::endl; 
                         }
                     }
 

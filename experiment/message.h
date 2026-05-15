@@ -8,7 +8,8 @@
 
 enum MsgType {
     READ_REQ, 
-    READ_RES
+    READ_RES,
+    INVALIDATE
 };
 
 // data sent in a message 

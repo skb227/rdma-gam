@@ -340,14 +340,66 @@ public:
     /// @param dataE    data entry read from the ptr 
     /// @param val      data to write
     /// @param ct       compute thread context 
-    void local_write(remus::rdma_ptr<DataEntry> ptr, DataEntry dataE, uint64_t val, CT &ct);
+    void local_write(remus::rdma_ptr<DataEntry> ptr, DataEntry dataE, uint64_t val, CT &ct) {
+        std::cout << "in local write" << std::endl; 
+/*
+UNSHARED -- home node can safely write the data without incurring any communication 
+SHARED -- request/home node issues INVALIDATE request to each sharing node 
+           upon receiving INVALIDATE, each sharing node acknowledges
+           then invalidates its local copy 
+           after receiving acknowledgements from all sharing nodes, home/request node will write
+DIRTY -- request node will issue INVALIDATE to sharing AND owner node 
+           owner node needs to piggyback the most recent cache line copy along with the acknowledgement 
+           but otherwise same as shared write 
+*/
+
+        if (dataE.dir.flag == UNSHARED) {
+            memcpy(dataE.data, val, sizeof(val));
+            // write the updated directory entry 
+            ct->Write(ptr, dataE); 
+        } else if (dataE.dir.flag == SHARED) {
+        // SHARED -- invalidate all nodes on the shared list 
+            // build invalidate message  
+            Message msg
+            msg.type = INVALIDATE;
+            msg.raw = ptr.raw();
+            msg.srcID = thisID;
+            msg.reqID = getReqID();
+            msg.valid = true;
+            // receive acknowledgement from all sharing nodes  -- for now bc mailbox is only one slot, will send message
+                        // and then wait for response before sending the next 
+            for (int i = 0; i < dataE.dir.slist_cnt; i++) {
+                send(dataE.dir.slist[i], msg, ct);
+                waitfor(msg.reqID);
+            }
+            // reset the sharing list for the data entry 
+            dataE.dir.slist_cnt = 0; 
+            // write to the data entry 
+            memcpy(dataE.data, val, sizeof(val));
+            // write the updated directory entry 
+            ct->Write(ptr, dataE); 
+        } else {
+        // DIRTY -- need to get latest data from owner node, invalidate owner and any shared 
+        }
+    }
 
     /// remote write -- request node is not the home node 
     /// @param ptr      rdma_ptr to write the data entry to 
     /// @param dataE    data entry read from the ptr 
     /// @param val      data to write
     /// @param ct       compute thread context
-    void remote_write(remus::rdma_ptr<DataEntry> ptr, DataEntry dataE, uint64_t val, CT &ct);
+    void remote_write(remus::rdma_ptr<DataEntry> ptr, DataEntry dataE, uint64_t val, CT &ct) {
+/*
+UNSHARED -- similar to shared, but home node can skip the invalidation of sharing nodes and write permission to request node imm. 
+
+SHARED -- home node receives write request from request node 
+            home node checks its directory to obtain info about sharing nodes 
+            invalidates cached copies on the sharing nodes 
+            receives acknowledgements from all sharing nodes 
+            transfers ownership (dlist) to request node 
+            up-to-date version of data is returned to request node 
+*/
+    }
     
 };
 
